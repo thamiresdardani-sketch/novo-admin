@@ -1,0 +1,238 @@
+--[[
+    Tácito Hub - Admin Panel
+    Jogo: Brookhaven RP | Executor: Xeno | WindUI: v1.6.66
+]]
+
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local TweenService     = game:GetService("TweenService")
+local TextChatService  = game:GetService("TextChatService")
+local Workspace        = game:GetService("Workspace")
+local Debris           = game:GetService("Debris")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer      = Players.LocalPlayer
+
+local function showError(msg)
+    local pg = LocalPlayer:WaitForChild("PlayerGui")
+    local old = pg:FindFirstChild("TacitoError")
+    if old then old:Destroy() end
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "TacitoError"; sg.DisplayOrder = 9999
+    sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true; sg.Parent = pg
+    local frame = Instance.new("Frame", sg)
+    frame.Size = UDim2.new(0, 500, 0, 100)
+    frame.Position = UDim2.new(0.5, -250, 0, 20)
+    frame.BackgroundColor3 = Color3.fromRGB(20, 0, 0)
+    frame.BorderSizePixel = 0
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+    local stroke = Instance.new("UIStroke", frame)
+    stroke.Color = Color3.fromRGB(255, 0, 0); stroke.Thickness = 2
+    local title = Instance.new("TextLabel", frame)
+    title.Size = UDim2.new(1, -10, 0, 28); title.Position = UDim2.new(0, 10, 0, 5)
+    title.BackgroundTransparency = 1
+    title.Text = "❌ ERRO WindUI — copie e mande pro agente:"
+    title.TextColor3 = Color3.fromRGB(255, 80, 80)
+    title.Font = Enum.Font.GothamBold; title.TextScaled = true
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    local body = Instance.new("TextLabel", frame)
+    body.Size = UDim2.new(1, -10, 0, 60); body.Position = UDim2.new(0, 10, 0, 35)
+    body.BackgroundTransparency = 1; body.Text = tostring(msg)
+    body.TextColor3 = Color3.fromRGB(255, 200, 200)
+    body.Font = Enum.Font.Gotham; body.TextScaled = true
+    body.TextWrapped = true; body.TextXAlignment = Enum.TextXAlignment.Left
+    task.delay(30, function() if sg and sg.Parent then sg:Destroy() end end)
+end
+
+local WindUI
+local ok, err = pcall(function()
+    WindUI = loadstring(game:HttpGet(
+        "https://github.com/Footagesus/WindUI/releases/download/1.6.66/main.lua"
+    ))()
+end)
+if not ok or not WindUI then showError("Falha ao carregar WindUI:\n" .. tostring(err)); return end
+
+local windowMethod = nil
+if type(WindUI.Window) == "function" then windowMethod = "Window"
+elseif type(WindUI.CreateWindow) == "function" then windowMethod = "CreateWindow"
+elseif type(WindUI.new) == "function" then windowMethod = "new"
+else
+    local methods = {}
+    for k, v in pairs(WindUI) do if type(v) == "function" then table.insert(methods, k) end end
+    showError("Métodos do WindUI:\n" .. table.concat(methods, ", ")); return
+end
+
+local Autorizados = { ["tácito"] = "👑 Dono" }
+local TargetName = ""
+local jaulas = {}
+local jailConnections = {}
+local playerOriginalSpeed = {}
+
+local function getPlayersList()
+    local list = {}
+    for _, p in ipairs(Players:GetPlayers()) do table.insert(list, p.Name) end
+    return list
+end
+local function findPlayer(name)
+    if not name or name == "" then return nil end
+    name = name:lower()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Name:lower():find(name, 1, true) then return p end
+    end
+    return nil
+end
+local function sendChat(msg)
+    pcall(function()
+        local ch = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
+        if ch then ch:SendAsync(msg) end
+    end)
+end
+local function notify(title, content)
+    pcall(function() WindUI:Notify({ Title = title, Content = content, Duration = 4 }) end)
+end
+
+local tagColors = {
+    ["👑 Dono"]  = Color3.fromRGB(255, 215, 0),
+    ["⚡ Admin"] = Color3.fromRGB(255, 0, 0),
+    ["🌙 VIP"]   = Color3.fromRGB(150, 0, 255),
+}
+local function createSpecialTag(player, tagText)
+    local color = tagColors[tagText] or Color3.fromRGB(255, 0, 0)
+    local function apply()
+        local char = player.Character
+        if not char then return end
+        local head = char:FindFirstChild("Head")
+        if not head then return end
+        local old = head:FindFirstChild("SpecialTag")
+        if old then old:Destroy() end
+        local gui = Instance.new("BillboardGui")
+        gui.Name = "SpecialTag"; gui.Size = UDim2.new(0, 240, 0, 56)
+        gui.StudsOffset = Vector3.new(0, 3.2, 0); gui.AlwaysOnTop = true
+        gui.Adornee = head; gui.Parent = head
+        local bg = Instance.new("Frame")
+        bg.Size = UDim2.fromScale(1, 1); bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        bg.BackgroundTransparency = 0.3; bg.BorderSizePixel = 0; bg.Parent = gui
+        Instance.new("UICorner", bg).CornerRadius = UDim.new(0, 14)
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = color; stroke.Thickness = 2.5; stroke.Parent = bg
+        local dot = Instance.new("Frame")
+        dot.Size = UDim2.new(0, 18, 0, 18); dot.Position = UDim2.new(0, 8, 0.5, -9)
+        dot.BackgroundColor3 = color; dot.BorderSizePixel = 0; dot.Parent = bg
+        Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+        local glow = Instance.new("Frame")
+        glow.Size = UDim2.new(0, 7, 0, 7); glow.Position = UDim2.new(0, 3, 0, 3)
+        glow.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        glow.BackgroundTransparency = 0.35; glow.BorderSizePixel = 0; glow.Parent = dot
+        Instance.new("UICorner", glow).CornerRadius = UDim.new(1, 0)
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(1, -34, 1, 0); lbl.Position = UDim2.new(0, 32, 0, 0)
+        lbl.BackgroundTransparency = 1; lbl.Text = tagText
+        lbl.TextColor3 = Color3.fromRGB(255, 255, 255); lbl.Font = Enum.Font.GothamBold
+        lbl.TextScaled = true; lbl.TextStrokeTransparency = 0.2
+        lbl.TextStrokeColor3 = Color3.new(0, 0, 0); lbl.Parent = bg
+        task.spawn(function()
+            while dot and dot.Parent do
+                TweenService:Create(dot, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), { BackgroundTransparency = 0.45 }):Play()
+                task.wait(0.8)
+                TweenService:Create(dot, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), { BackgroundTransparency = 0 }):Play()
+                task.wait(0.8)
+            end
+        end)
+    end
+    apply()
+    player.CharacterAdded:Connect(function() task.wait(0.5); apply() end)
+end
+for name, tag in pairs(Autorizados) do
+    local p = Players:FindFirstChild(name)
+    if p then createSpecialTag(p, tag) end
+end
+Players.PlayerAdded:Connect(function(p)
+    if Autorizados[p.Name] then task.wait(1); createSpecialTag(p, Autorizados[p.Name]) end
+end)
+
+local function cmdKick(t) if t == LocalPlayer then LocalPlayer:Kick("Você foi expulso por um moderador.") end; return true end
+local function cmdKill(t) if not t.Character then return false end; local h = t.Character:FindFirstChildOfClass("Humanoid"); if h then h.Health = 0 end; return true end
+local function cmdFling(t) if not t.Character then return false end; local r = t.Character:FindFirstChild("HumanoidRootPart"); if not r then return false end; TweenService:Create(r, TweenInfo.new(0.3, Enum.EasingStyle.Linear), { CFrame = CFrame.new(0, 100000, 0) }):Play(); return true end
+local function cmdFreeze(t) if not t.Character then return false end; local h = t.Character:FindFirstChildOfClass("Humanoid"); if not h then return false end; playerOriginalSpeed[t.Name] = h.WalkSpeed; h.WalkSpeed = 0; h.JumpHeight = 0; return true end
+local function cmdUnfreeze(t) if not t.Character then return false end; local h = t.Character:FindFirstChildOfClass("Humanoid"); if not h then return false end; h.WalkSpeed = playerOriginalSpeed[t.Name] or 16; h.JumpHeight = 7.2; playerOriginalSpeed[t.Name] = nil; return true end
+local function cmdJail(t)
+    if not t.Character then return false end
+    local root = t.Character:FindFirstChild("HumanoidRootPart"); if not root then return false end
+    if jaulas[t.Name] then for _, p in ipairs(jaulas[t.Name]) do p:Destroy() end; if jailConnections[t.Name] then jailConnections[t.Name]:Disconnect() end end
+    local pos = root.Position; jaulas[t.Name] = {}
+    local function wall(cf, s) local p = Instance.new("Part"); p.Anchored = true; p.Size = s; p.CFrame = cf; p.Transparency = 0.45; p.Color = Color3.fromRGB(255,0,0); p.Material = Enum.Material.Neon; p.CanCollide = true; p.Parent = Workspace; table.insert(jaulas[t.Name], p) end
+    wall(CFrame.new(pos+Vector3.new(5,0,0)),Vector3.new(1,12,10)); wall(CFrame.new(pos+Vector3.new(-5,0,0)),Vector3.new(1,12,10))
+    wall(CFrame.new(pos+Vector3.new(0,0,5)),Vector3.new(10,12,1)); wall(CFrame.new(pos+Vector3.new(0,0,-5)),Vector3.new(10,12,1))
+    wall(CFrame.new(pos+Vector3.new(0,6,0)),Vector3.new(10,1,10)); wall(CFrame.new(pos+Vector3.new(0,-5,0)),Vector3.new(10,1,10))
+    jailConnections[t.Name] = RunService.Heartbeat:Connect(function() local c = t.Character; local r = c and c:FindFirstChild("HumanoidRootPart"); if r and (r.Position-pos).Magnitude > 5.5 then r.CFrame = CFrame.new(pos) end end)
+    return true
+end
+local function cmdUnjail(t) if jaulas[t.Name] then for _, p in ipairs(jaulas[t.Name]) do p:Destroy() end; jaulas[t.Name] = nil end; if jailConnections[t.Name] then jailConnections[t.Name]:Disconnect(); jailConnections[t.Name] = nil end; return true end
+local function cmdExplode(t)
+    if not t.Character then return false end; local hrp = t.Character:FindFirstChild("HumanoidRootPart"); if not hrp then return false end
+    local exp = Instance.new("Explosion"); exp.Position = hrp.Position; exp.BlastPressure = 500000; exp.BlastRadius = 10; exp.DestroyJointRadiusPercent = 0; exp.Parent = Workspace
+    for i = 1, 8 do local p = Instance.new("Part"); p.Size = Vector3.new(2,2,2); p.Position = hrp.Position+Vector3.new(math.random(-8,8),math.random(0,12),math.random(-8,8)); p.Anchored = false; p.CanCollide = false; p.Material = Enum.Material.Neon; p.Color = Color3.fromRGB(255,50,50); p.Parent = Workspace; local bv = Instance.new("BodyVelocity"); bv.Velocity = Vector3.new(math.random(-80,80),math.random(30,100),math.random(-80,80)); bv.MaxForce = Vector3.new(1e5,1e5,1e5); bv.Parent = p; Debris:AddItem(p, 3) end
+    local h = t.Character:FindFirstChildOfClass("Humanoid"); if h then h.Health = 0 end; return true
+end
+local function cmdBring(t) if not t.Character then return false end; local myChar = LocalPlayer.Character; if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return false end; local r = t.Character:FindFirstChild("HumanoidRootPart"); if not r then return false end; r.CFrame = myChar.HumanoidRootPart.CFrame*CFrame.new(0,0,-3); return true end
+local function cmdVerifique() pcall(function() sendChat("tácito_"..math.random(1000,9999)) end) end
+local function cmdBackrooms() task.spawn(function() local sg = Instance.new("ScreenGui"); sg.Name = "BackroomsBlackout"; sg.DisplayOrder = 9999; sg.IgnoreGuiInset = true; sg.ResetOnSpawn = false; sg.Parent = LocalPlayer:WaitForChild("PlayerGui"); local f = Instance.new("Frame", sg); f.Size = UDim2.fromScale(1,1); f.BackgroundColor3 = Color3.new(0,0,0); f.BackgroundTransparency = 1; f.BorderSizePixel = 0; TweenService:Create(f, TweenInfo.new(0.5), {BackgroundTransparency=0}):Play(); task.wait(2); pcall(function() local mapa = game:GetObjects("rbxassetid://10581711055")[1]; if mapa then mapa.Parent = Workspace; mapa.PrimaryPart = mapa.PrimaryPart or mapa:FindFirstChildWhichIsA("BasePart"); if mapa.PrimaryPart then mapa:SetPrimaryPartCFrame(CFrame.new(0,10000,0)) end end end); local char = LocalPlayer.Character; if char and char:FindFirstChild("HumanoidRootPart") then char:MoveTo(Vector3.new(59,9996,19)) end; TweenService:Create(f, TweenInfo.new(0.5), {BackgroundTransparency=1}):Play(); task.wait(0.6); sg:Destroy() end) end
+local function cmdCoolkidd(t)
+    if not t.Character then return false end; local char = t.Character
+    for _, part in ipairs(char:GetDescendants()) do if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then part.BrickColor = BrickColor.new("Bright red"); part.Material = Enum.Material.SmoothPlastic end end
+    for _, obj in ipairs(char:GetDescendants()) do if obj:IsA("Shirt") or obj:IsA("Pants") or obj:IsA("ShirtGraphic") then obj:Destroy() end end
+    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+    if torso then local sg = Instance.new("SurfaceGui"); sg.Face = Enum.NormalId.Front; sg.Adornee = torso; sg.CanvasSize = Vector2.new(200,200); sg.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize; sg.Parent = torso; local lbl = Instance.new("TextLabel", sg); lbl.Size = UDim2.fromScale(1,1); lbl.BackgroundColor3 = Color3.fromRGB(255,0,0); lbl.BackgroundTransparency = 0; lbl.Text = "team c00lkidd\njoin today"; lbl.TextColor3 = Color3.new(0,0,0); lbl.Font = Enum.Font.GothamBold; lbl.TextScaled = true end
+    local head = char:FindFirstChild("Head"); if head then for _, d in ipairs(head:GetChildren()) do if d:IsA("Decal") then d:Destroy() end end; local face = Instance.new("Decal"); face.Face = Enum.NormalId.Front; face.Texture = "rbxassetid://7074891001"; face.Parent = head end
+    return true
+end
+
+local Window
+local ok2, err2 = pcall(function()
+    Window = WindUI[windowMethod](WindUI, {
+        Title = "Tácito Hub", SubTitle = "Admin Panel | Brookhaven",
+        TabWidth = 160, Size = UDim2.fromOffset(580, 460),
+        Acrylic = false, Theme = "Dark",
+    })
+end)
+if not ok2 or not Window then showError("WindUI."..windowMethod.."() falhou:\n"..tostring(err2)); return end
+
+local TabPlayers
+local ok3, err3 = pcall(function() TabPlayers = Window:Tab({ Title = "Jogadores", Icon = "users" }) end)
+if not ok3 or not TabPlayers then showError("Window:Tab() falhou:\n"..tostring(err3)); return end
+
+local SecAlvo = TabPlayers:Section({ Title = "Selecionar Alvo" })
+local Dropdown = SecAlvo:Dropdown({ Title = "Selecionar Jogador", Values = getPlayersList(), Multi = false, Default = "", Callback = function(val) TargetName = val; notify("Alvo", "Selecionado: "..val) end })
+Players.PlayerAdded:Connect(function() pcall(function() Dropdown:SetValues(getPlayersList()) end) end)
+Players.PlayerRemoving:Connect(function() pcall(function() Dropdown:SetValues(getPlayersList()) end) end)
+
+local SecCmds = TabPlayers:Section({ Title = "Comandos" })
+local function runCmd(fn, label)
+    local t = findPlayer(TargetName)
+    if not t then notify("Erro", "Selecione um jogador no dropdown!"); return end
+    sendChat(";"..label.." "..t.Name); pcall(fn, t)
+    notify(label:gsub("^%l", string.upper), t.Name.." | executado!")
+end
+SecCmds:Button({ Title = "Kick",            Callback = function() runCmd(cmdKick,     "kick")     end })
+SecCmds:Button({ Title = "Kill",            Callback = function() runCmd(cmdKill,     "kill")     end })
+SecCmds:Button({ Title = "Fling",           Callback = function() runCmd(cmdFling,    "fling")    end })
+SecCmds:Button({ Title = "Freeze",          Callback = function() runCmd(cmdFreeze,   "freeze")   end })
+SecCmds:Button({ Title = "Unfreeze",        Callback = function() runCmd(cmdUnfreeze, "unfreeze") end })
+SecCmds:Button({ Title = "Jail",            Callback = function() runCmd(cmdJail,     "jail")     end })
+SecCmds:Button({ Title = "Unjail",          Callback = function() runCmd(cmdUnjail,   "unjail")   end })
+SecCmds:Button({ Title = "Bring",           Callback = function() runCmd(cmdBring,    "bring")    end })
+SecCmds:Button({ Title = "Explode",         Callback = function() runCmd(cmdExplode,  "explode")  end })
+SecCmds:Button({ Title = "c00lkidd Avatar", Callback = function() runCmd(cmdCoolkidd, "coolkidd") end })
+SecCmds:Button({ Title = "Backrooms",       Callback = function() local t = findPlayer(TargetName); if not t then notify("Erro","Selecione!"); return end; sendChat(";backrooms "..t.Name); cmdBackrooms(); notify("Backrooms","Teleportando!") end })
+
+local TabVerify = Window:Tab({ Title = "Verificar", Icon = "shield-check" })
+TabVerify:Section({ Title = "Anti-Leak" }):Button({ Title = "Verifique", Callback = function() cmdVerifique(); notify("Verificar","Código enviado!") end })
+
+local TabCfg = Window:Tab({ Title = "Config", Icon = "settings" })
+TabCfg:Section({ Title = "Painel" }):Button({ Title = "Fechar Painel", Callback = function() Window:Destroy() end })
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.P then pcall(function() Window:Toggle() end) end
+end)
+
+notify("Tácito Hub", "Painel carregado! Pressione [P] para abrir/fechar.")
