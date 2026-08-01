@@ -1,278 +1,497 @@
---[[
-    Tácito Hub - System Admin (Multi-User Sync)
-    Jogo: Brookhaven RP | Executor Compatible | WindUI v1.6.66
-]]
+-- TÁCITO HUB - Versão Final com Botão de Minimizar (LocalScript)
 
-local Players          = game:GetService("Players")
-local RunService       = game:GetService("RunService")
-local TweenService     = game:GetService("TweenService")
-local TextChatService  = game:GetService("TextChatService")
-local Workspace        = game:GetService("Workspace")
-local Debris           = game:GetService("Debris")
-local UserInputService = game:GetService("UserInputService")
-local LocalPlayer      = Players.LocalPlayer
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local TextChatService = game:GetService("TextChatService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
 
--- LISTA DE ADMINISTRADORES
--- Adicione os nicks em letras minúsculas de quem tem permissão para mandar comandos
-local Admins = {
-    ["tácito"] = true,
-    [LocalPlayer.Name:lower()] = true -- Você sempre terá permissão no seu script
-}
-
-local TargetName = ""
+-- Tabelas Globais
 local jaulas = {}
 local jailConnections = {}
-local playerOriginalSpeed = 16
 
--- ==========================================
--- LÓGICA DE AÇÕES LOCAIS (Executadas no próprio personagem)
--- ==========================================
-
-local function actionKick()
-    LocalPlayer:Kick("Você foi expulso pelo painel de administração.")
-end
-
-local function actionKill()
-    local char = LocalPlayer.Character
-    if char then
-        local h = char:FindFirstChildOfClass("Humanoid")
-        if h then h.Health = 0 end
-    end
-end
-
-local function actionFling()
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        char.HumanoidRootPart.Velocity = Vector3.new(0, 100000, 0)
-    end
-end
-
-local function actionFreeze()
-    local char = LocalPlayer.Character
-    if char then
-        local h = char:FindFirstChildOfClass("Humanoid")
-        if h then
-            playerOriginalSpeed = h.WalkSpeed
-            h.WalkSpeed = 0
-            h.JumpHeight = 0
-        end
-    end
-end
-
-local function actionUnfreeze()
-    local char = LocalPlayer.Character
-    if char then
-        local h = char:FindFirstChildOfClass("Humanoid")
-        if h then
-            h.WalkSpeed = playerOriginalSpeed or 16
-            h.JumpHeight = 7.2
-        end
-    end
-end
-
-local function actionJail()
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-    local root = char.HumanoidRootPart
-    local pos = root.Position
-
-    if jaulas[LocalPlayer.Name] then
-        for _, p in ipairs(jaulas[LocalPlayer.Name]) do p:Destroy() end
-        if jailConnections[LocalPlayer.Name] then jailConnections[LocalPlayer.Name]:Disconnect() end
-    end
-
-    jaulas[LocalPlayer.Name] = {}
-    local function wall(cf, s)
-        local p = Instance.new("Part")
-        p.Anchored = true; p.Size = s; p.CFrame = cf; p.Transparency = 0.45
-        p.Color = Color3.fromRGB(255, 0, 0); p.Material = Enum.Material.Neon
-        p.CanCollide = true; p.Parent = Workspace
-        table.insert(jaulas[LocalPlayer.Name], p)
-    end
-
-    wall(CFrame.new(pos + Vector3.new(5,0,0)), Vector3.new(1,12,10))
-    wall(CFrame.new(pos + Vector3.new(-5,0,0)), Vector3.new(1,12,10))
-    wall(CFrame.new(pos + Vector3.new(0,0,5)), Vector3.new(10,12,1))
-    wall(CFrame.new(pos + Vector3.new(0,0,-5)), Vector3.new(10,12,1))
-    wall(CFrame.new(pos + Vector3.new(0,6,0)), Vector3.new(10,1,10))
-    wall(CFrame.new(pos + Vector3.new(0,-5,0)), Vector3.new(10,1,10))
-
-    jailConnections[LocalPlayer.Name] = RunService.Heartbeat:Connect(function()
-        if root and (root.Position - pos).Magnitude > 5.5 then
-            root.CFrame = CFrame.new(pos)
-        end
-    end)
-end
-
-local function actionUnjail()
-    if jaulas[LocalPlayer.Name] then
-        for _, p in ipairs(jaulas[LocalPlayer.Name]) do p:Destroy() end
-        jaulas[LocalPlayer.Name] = nil
-    end
-    if jailConnections[LocalPlayer.Name] then
-        jailConnections[LocalPlayer.Name]:Disconnect()
-        jailConnections[LocalPlayer.Name] = nil
-    end
-end
-
-local function actionExplode()
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-    local hrp = char.HumanoidRootPart
-
-    local exp = Instance.new("Explosion")
-    exp.Position = hrp.Position; exp.BlastPressure = 500000
-    exp.BlastRadius = 10; exp.DestroyJointRadiusPercent = 0; exp.Parent = Workspace
-
-    for i = 1, 8 do
-        local p = Instance.new("Part")
-        p.Size = Vector3.new(2,2,2)
-        p.Position = hrp.Position + Vector3.new(math.random(-8,8), math.random(0,12), math.random(-8,8))
-        p.Anchored = false; p.CanCollide = false; p.Material = Enum.Material.Neon
-        p.Color = Color3.fromRGB(255,50,50); p.Parent = Workspace
-        local bv = Instance.new("BodyVelocity")
-        bv.Velocity = Vector3.new(math.random(-80,80), math.random(30,100), math.random(-80,80))
-        bv.MaxForce = Vector3.new(1e5,1e5,1e5); bv.Parent = p
-        Debris:AddItem(p, 3)
-    end
-    actionKill()
-end
-
-local function actionBring(senderName)
-    local sender = Players:FindFirstChild(senderName)
-    if sender and sender.Character and sender.Character:FindFirstChild("HumanoidRootPart") then
-        local myChar = LocalPlayer.Character
-        if myChar and myChar:FindFirstChild("HumanoidRootPart") then
-            myChar.HumanoidRootPart.CFrame = sender.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3)
-        end
-    end
-end
-
-local function actionCoolkidd()
-    local char = LocalPlayer.Character
-    if not char then return end
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            part.BrickColor = BrickColor.new("Bright red")
-            part.Material = Enum.Material.SmoothPlastic
-        end
-    end
-    for _, obj in ipairs(char:GetDescendants()) do
-        if obj:IsA("Shirt") or obj:IsA("Pants") or obj:IsA("ShirtGraphic") then
-            obj:Destroy()
-        end
-    end
-    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-    if torso then
-        local sg = Instance.new("SurfaceGui")
-        sg.Face = Enum.NormalId.Front; sg.Adornee = torso; sg.CanvasSize = Vector2.new(200,200)
-        sg.Parent = torso
-        local lbl = Instance.new("TextLabel", sg)
-        lbl.Size = UDim2.fromScale(1,1); lbl.BackgroundColor3 = Color3.fromRGB(255,0,0)
-        lbl.Text = "team c00lkidd\njoin today"; lbl.TextColor3 = Color3.new(0,0,0)
-        lbl.Font = Enum.Font.GothamBold; lbl.TextScaled = true
-    end
-end
-
--- ==========================================
--- RECEPTOR DE COMANDOS VIA CHAT
--- ==========================================
-
-local function processCommand(sender, message)
-    if not Admins[sender.Name:lower()] then return end -- Ignora quem não for Admin
-
-    local prefix = message:sub(1, 1)
-    if prefix ~= ";" then return end
-
-    local args = string.split(message:sub(2), " ")
-    local cmd = args[1] and args[1]:lower() or ""
-    local target = args[2] and args[2]:lower() or ""
-
-    -- Verifica se o comando é direcionado a este jogador ou a todos ("all")
-    local myName = LocalPlayer.Name:lower()
-    if target ~= "all" and not myName:find(target, 1, true) then return end
-
-    -- Execução dos comandos no cliente
-    if cmd == "kick" then actionKick()
-    elseif cmd == "kill" then actionKill()
-    elseif cmd == "fling" then actionFling()
-    elseif cmd == "freeze" then actionFreeze()
-    elseif cmd == "unfreeze" then actionUnfreeze()
-    elseif cmd == "jail" then actionJail()
-    elseif cmd == "unjail" then actionUnjail()
-    elseif cmd == "explode" then actionExplode()
-    elseif cmd == "bring" then actionBring(sender.Name)
-    elseif cmd == "coolkidd" then actionCoolkidd()
-    end
-end
-
--- Escutar mensagens de texto no jogo
-TextChatService.MessageReceived:Connect(function(textChatMessage)
-    local textSource = textChatMessage.TextSource
-    if textSource then
-        local sender = Players:GetPlayerByUserId(textSource.UserId)
-        if sender then
-            processCommand(sender, textChatMessage.Text)
-        end
-    end
-end)
-
--- ==========================================
--- INTERFACE GRAFICA (WindUI)
--- ==========================================
-
-local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/download/1.6.66/main.lua"))()
-
-local Window = WindUI:CreateWindow({
-    Title = "Tácito Hub", SubTitle = "Admin Multi-User Panel",
-    TabWidth = 160, Size = UDim2.fromOffset(580, 460),
-    Theme = "Dark"
-})
-
-local TabPlayers = Window:Tab({ Title = "Jogadores", Icon = "users" })
-local SecAlvo = TabPlayers:Section({ Title = "Selecionar Alvo" })
-
-local function getPlayersList()
-    local list = {"all"}
-    for _, p in ipairs(Players:GetPlayers()) do table.insert(list, p.Name) end
-    return list
-end
-
-local Dropdown = SecAlvo:Dropdown({
-    Title = "Selecionar Jogador",
-    Values = getPlayersList(),
-    Multi = false,
-    Default = "all",
-    Callback = function(val) TargetName = val end
-})
-
-Players.PlayerAdded:Connect(function() Dropdown:SetValues(getPlayersList()) end)
-Players.PlayerRemoving:Connect(function() Dropdown:SetValues(getPlayersList()) end)
-
-local SecCmds = TabPlayers:Section({ Title = "Comandos de Admin" })
-
-local function sendCmd(label)
-    local target = TargetName ~= "" and TargetName or "all"
-    local msg = ";" .. label .. " " .. target
-    pcall(function()
-        local channel = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
+---------------------------------------------------------
+-- ENVIAR COMANDOS PELO CHAT
+---------------------------------------------------------
+local function enviarComandoChat(msg)
+    if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+        local channel = TextChatService.TextChannels.RBXGeneral
         if channel then channel:SendAsync(msg) end
+    else
+        ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+            :FindFirstChild("SayMessageRequest"):FireServer(msg, "All")
+    end
+end
+
+---------------------------------------------------------
+-- INTERFACE GRÁFICA (GUI)
+---------------------------------------------------------
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "TacitoHubGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Frame Principal
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 210, 0, 360)
+MainFrame.Position = UDim2.new(0.5, -105, 0.5, -180)
+MainFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 6)
+MainCorner.Parent = MainFrame
+
+-- Barra de Título
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 26)
+TitleBar.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+TitleBar.BorderSizePixel = 0
+TitleBar.Parent = MainFrame
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 6)
+TitleCorner.Parent = TitleBar
+
+local TitleText = Instance.new("TextLabel")
+TitleText.Size = UDim2.new(1, -50, 1, 0)
+TitleText.Position = UDim2.new(0, 8, 0, 0)
+TitleText.BackgroundTransparency = 1
+TitleText.Text = "Tácito Hub"
+TitleText.TextColor3 = Color3.fromRGB(240, 240, 240)
+TitleText.TextXAlignment = Enum.TextXAlignment.Left
+TitleText.TextSize = 13
+TitleText.Font = Enum.Font.SourceSansBold
+TitleText.Parent = TitleBar
+
+-- Botão Minimizar (-)
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Size = UDim2.new(0, 20, 0, 20)
+MinimizeBtn.Position = UDim2.new(1, -45, 0, 3)
+MinimizeBtn.BackgroundTransparency = 1
+MinimizeBtn.Text = "-"
+MinimizeBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+MinimizeBtn.TextSize = 16
+MinimizeBtn.Font = Enum.Font.SourceSansBold
+MinimizeBtn.Parent = TitleBar
+
+-- Botão Fechar (✕)
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 20, 0, 20)
+CloseBtn.Position = UDim2.new(1, -23, 0, 3)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Text = "✕"
+CloseBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+CloseBtn.TextSize = 12
+CloseBtn.Parent = TitleBar
+
+CloseBtn.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
+end)
+
+-- Barra de Abas
+local TabBar = Instance.new("Frame")
+TabBar.Size = UDim2.new(1, 0, 0, 26)
+TabBar.Position = UDim2.new(0, 0, 0, 26)
+TabBar.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+TabBar.BorderSizePixel = 0
+TabBar.Parent = MainFrame
+
+local TabComandosBtn = Instance.new("TextButton")
+TabComandosBtn.Size = UDim2.new(0.333, 0, 1, 0)
+TabComandosBtn.Text = "Comandos"
+TabComandosBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+TabComandosBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+TabComandosBtn.Font = Enum.Font.SourceSans
+TabComandosBtn.TextSize = 12
+TabComandosBtn.Parent = TabBar
+
+local TabAvatarBtn = Instance.new("TextButton")
+TabAvatarBtn.Size = UDim2.new(0.333, 0, 1, 0)
+TabAvatarBtn.Position = UDim2.new(0.333, 0, 0, 0)
+TabAvatarBtn.Text = "Avatar"
+TabAvatarBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+TabAvatarBtn.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+TabAvatarBtn.Font = Enum.Font.SourceSans
+TabAvatarBtn.TextSize = 12
+TabAvatarBtn.Parent = TabBar
+
+local TabTerrorBtn = Instance.new("TextButton")
+TabTerrorBtn.Size = UDim2.new(0.334, 0, 1, 0)
+TabTerrorBtn.Position = UDim2.new(0.666, 0, 0, 0)
+TabTerrorBtn.Text = "Terror"
+TabTerrorBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+TabTerrorBtn.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+TabTerrorBtn.Font = Enum.Font.SourceSans
+TabTerrorBtn.TextSize = 12
+TabTerrorBtn.Parent = TabBar
+
+-- Conteineres
+local ComandosContainer = Instance.new("ScrollingFrame")
+ComandosContainer.Size = UDim2.new(1, -12, 1, -60)
+ComandosContainer.Position = UDim2.new(0, 6, 0, 56)
+ComandosContainer.BackgroundTransparency = 1
+ComandosContainer.CanvasSize = UDim2.new(0, 0, 0, 420)
+ComandosContainer.ScrollBarThickness = 3
+ComandosContainer.BorderSizePixel = 0
+ComandosContainer.Parent = MainFrame
+
+local UIList = Instance.new("UIListLayout")
+UIList.Padding = UDim.new(0, 5)
+UIList.SortOrder = Enum.SortOrder.LayoutOrder
+UIList.Parent = ComandosContainer
+
+local AvatarContainer = Instance.new("Frame")
+AvatarContainer.Size = UDim2.new(1, -12, 1, -60)
+AvatarContainer.Position = UDim2.new(0, 6, 0, 56)
+AvatarContainer.BackgroundTransparency = 1
+AvatarContainer.Visible = false
+AvatarContainer.Parent = MainFrame
+
+-- Lógica de Minimizar/Expandir
+local minimizado = false
+MinimizeBtn.MouseButton1Click:Connect(function()
+    minimizado = not minimizado
+    if minimizado then
+        MainFrame.Size = UDim2.new(0, 210, 0, 26)
+        TabBar.Visible = false
+        ComandosContainer.Visible = false
+        AvatarContainer.Visible = false
+        MinimizeBtn.Text = "+"
+    else
+        MainFrame.Size = UDim2.new(0, 210, 0, 360)
+        TabBar.Visible = true
+        if TabComandosBtn.BackgroundColor3 == Color3.fromRGB(45, 45, 45) then
+            ComandosContainer.Visible = true
+        else
+            AvatarContainer.Visible = true
+        end
+        MinimizeBtn.Text = "-"
+    end
+end)
+
+-- Troca de Abas
+TabComandosBtn.MouseButton1Click:Connect(function()
+    ComandosContainer.Visible = true
+    AvatarContainer.Visible = false
+    TabComandosBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    TabComandosBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TabAvatarBtn.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+    TabAvatarBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+end)
+
+TabAvatarBtn.MouseButton1Click:Connect(function()
+    ComandosContainer.Visible = false
+    AvatarContainer.Visible = true
+    TabAvatarBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    TabAvatarBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TabComandosBtn.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+    TabComandosBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+end)
+
+---------------------------------------------------------
+-- DROPDOWN SELETOR
+---------------------------------------------------------
+local selectedPlayerGlobal = ""
+
+local function CriarDropdown(parent, defaultText, layoutOrder)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 24)
+    btn.BackgroundColor3 = Color3.fromRGB(36, 36, 36)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Text = defaultText
+    btn.Font = Enum.Font.SourceSans
+    btn.TextSize = 12
+    btn.LayoutOrder = layoutOrder
+    btn.Parent = parent
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 4)
+    btnCorner.Parent = btn
+
+    local list = Instance.new("ScrollingFrame")
+    list.Size = UDim2.new(1, 0, 0, 90)
+    list.Position = UDim2.new(0, 0, 1, 2)
+    list.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
+    list.Visible = false
+    list.ZIndex = 10
+    list.ScrollBarThickness = 3
+    list.Parent = btn
+
+    local function AtualizarLista()
+        for _, child in ipairs(list:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+        local y = 0
+        for _, p in ipairs(Players:GetPlayers()) do
+            local pBtn = Instance.new("TextButton")
+            pBtn.Size = UDim2.new(1, 0, 0, 22)
+            pBtn.Position = UDim2.new(0, 0, 0, y)
+            pBtn.Text = p.Name
+            pBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+            pBtn.BackgroundColor3 = Color3.fromRGB(36, 36, 36)
+            pBtn.ZIndex = 11
+            pBtn.Parent = list
+            pBtn.MouseButton1Click:Connect(function()
+                selectedPlayerGlobal = p.Name
+                btn.Text = p.Name
+                list.Visible = false
+            end)
+            y = y + 22
+        end
+        list.CanvasSize = UDim2.new(0, 0, 0, y)
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        list.Visible = not list.Visible
+        if list.Visible then AtualizarLista() end
+    end)
+
+    return function() return selectedPlayerGlobal end
+end
+
+---------------------------------------------------------
+-- ABA COMANDOS
+---------------------------------------------------------
+local GetTargetComandos = CriarDropdown(ComandosContainer, "Selecionar Jogador", 1)
+
+local SearchBox = Instance.new("TextBox")
+SearchBox.Size = UDim2.new(1, 0, 0, 24)
+SearchBox.BackgroundColor3 = Color3.fromRGB(36, 36, 36)
+SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+SearchBox.PlaceholderText = "TextBox"
+SearchBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
+SearchBox.Text = ""
+SearchBox.Font = Enum.Font.SourceSans
+SearchBox.TextSize = 12
+SearchBox.LayoutOrder = 2
+SearchBox.Parent = ComandosContainer
+
+local BoxCorner = Instance.new("UICorner")
+BoxCorner.CornerRadius = UDim.new(0, 4)
+BoxCorner.Parent = SearchBox
+
+local function CriarBotaoComando(texto, order, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 24)
+    btn.BackgroundColor3 = Color3.fromRGB(36, 36, 36)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Text = texto
+    btn.Font = Enum.Font.SourceSans
+    btn.TextSize = 12
+    btn.LayoutOrder = order
+    btn.Parent = ComandosContainer
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = btn
+
+    btn.MouseButton1Click:Connect(callback)
+end
+
+CriarBotaoComando(";verifique", 3, function() enviarComandoChat(";verifique") end)
+CriarBotaoComando(";kick", 4, function() 
+    local a = GetTargetComandos() if a ~= "" then enviarComandoChat(";kick " .. a) end 
+end)
+CriarBotaoComando(";crash", 5, function() 
+    local a = GetTargetComandos() if a ~= "" then enviarComandoChat(";crash " .. a) end 
+end)
+CriarBotaoComando(";kill", 6, function() 
+    local a = GetTargetComandos() if a ~= "" then enviarComandoChat(";kill " .. a) end 
+end)
+CriarBotaoComando(";killplus", 7, function() 
+    local a = GetTargetComandos() if a ~= "" then enviarComandoChat(";killplus " .. a) end 
+end)
+CriarBotaoComando(";bring", 8, function() 
+    local a = GetTargetComandos() if a ~= "" then enviarComandoChat(";bring " .. a) end 
+end)
+CriarBotaoComando(";jail", 9, function() 
+    local a = GetTargetComandos() if a ~= "" then enviarComandoChat(";jail " .. a) end 
+end)
+CriarBotaoComando(";unjail", 10, function() 
+    local a = GetTargetComandos() if a ~= "" then enviarComandoChat(";unjail " .. a) end 
+end)
+CriarBotaoComando(";freeze", 11, function() 
+    local a = GetTargetComandos() if a ~= "" then enviarComandoChat(";freeze " .. a) end 
+end)
+CriarBotaoComando(";unfreeze", 12, function() 
+    local a = GetTargetComandos() if a ~= "" then enviarComandoChat(";unfreeze " .. a) end 
+end)
+
+---------------------------------------------------------
+-- ABA AVATAR
+---------------------------------------------------------
+local AvatarList = Instance.new("UIListLayout")
+AvatarList.Padding = UDim.new(0, 5)
+AvatarList.Parent = AvatarContainer
+
+local GetAvatarCopiador = CriarDropdown(AvatarContainer, "Quem vai copiar (Copiador)", 1)
+local GetAvatarAlvo = CriarDropdown(AvatarContainer, "Player Alvo", 2)
+
+local CopyAvatarBtn = Instance.new("TextButton")
+CopyAvatarBtn.Size = UDim2.new(1, 0, 0, 26)
+CopyAvatarBtn.BackgroundColor3 = Color3.fromRGB(0, 110, 200)
+CopyAvatarBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CopyAvatarBtn.Text = "Copiar Avatar"
+CopyAvatarBtn.Font = Enum.Font.SourceSansBold
+CopyAvatarBtn.TextSize = 12
+CopyAvatarBtn.LayoutOrder = 3
+CopyAvatarBtn.Parent = AvatarContainer
+
+local CopyCorner = Instance.new("UICorner")
+CopyCorner.CornerRadius = UDim.new(0, 4)
+CopyCorner.Parent = CopyAvatarBtn
+
+CopyAvatarBtn.MouseButton1Click:Connect(function()
+    local copiador = GetAvatarCopiador()
+    local alvo = GetAvatarAlvo()
+    if copiador ~= "" and alvo ~= "" then
+        enviarComandoChat(";copyavatar " .. copiador .. " " .. alvo)
+    end
+end)
+
+---------------------------------------------------------
+-- LEITURA E EXECUÇÃO
+---------------------------------------------------------
+local function ExecutarComandoLocais(msg)
+    local me = LocalPlayer.Name
+
+    if msg:match(";kick%s+" .. me) then
+        LocalPlayer:Kick("Você foi desconectado pelo Tácito Hub.")
+
+    elseif msg:match(";jail%s+" .. me) then
+        local char = LocalPlayer.Character
+        if char then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then
+                local pos = root.Position
+                if jaulas[me] then
+                    for _, parte in ipairs(jaulas[me]) do if parte then parte:Destroy() end end
+                end
+                jaulas[me] = {}
+                local function criar(cf, s)
+                    local p = Instance.new("Part")
+                    p.Anchored = true; p.CanCollide = true
+                    p.Material = Enum.Material.ForceField
+                    p.Transparency = 0.3
+                    p.Color = Color3.fromRGB(0, 100, 255)
+                    p.Size = s; p.CFrame = cf
+                    p.Parent = Workspace
+                    local pointLight = Instance.new("PointLight")
+                    pointLight.Color = Color3.fromRGB(0, 100, 255)
+                    pointLight.Brightness = 2
+                    pointLight.Range = 15
+                    pointLight.Parent = p
+                    table.insert(jaulas[me], p)
+                end
+                criar(CFrame.new(pos + Vector3.new(5,0,0)),   Vector3.new(1,10,10))
+                criar(CFrame.new(pos + Vector3.new(-5,0,0)),  Vector3.new(1,10,10))
+                criar(CFrame.new(pos + Vector3.new(0,0,5)),   Vector3.new(10,10,1))
+                criar(CFrame.new(pos + Vector3.new(0,0,-5)),  Vector3.new(10,10,1))
+                criar(CFrame.new(pos + Vector3.new(0,5,0)),   Vector3.new(10,1,10))
+                criar(CFrame.new(pos + Vector3.new(0,-5,0)),  Vector3.new(10,1,10))
+                
+                if jailConnections[me] then jailConnections[me]:Disconnect() end
+                local jailThread = task.spawn(function()
+                    while jaulas[me] do
+                        if root and (root.Position - pos).Magnitude > 5 then
+                            root.CFrame = CFrame.new(pos)
+                            root.AssemblyLinearVelocity = Vector3.new(0,0,0)
+                        end
+                        task.wait(0.2)
+                    end
+                end)
+                jailConnections[me] = { Disconnect = function() task.cancel(jailThread) end }
+            end
+        end
+
+    elseif msg:match(";unjail%s+" .. me) then
+        if jaulas[me] then
+            for _, parte in ipairs(jaulas[me]) do if parte then parte:Destroy() end end
+            jaulas[me] = nil
+        end
+        if jailConnections[me] then
+            jailConnections[me]:Disconnect()
+            jailConnections[me] = nil
+        end
+
+    elseif msg:match(";killplus%s+" .. me) then
+        local char = LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then
+                local emitter = Instance.new("ParticleEmitter")
+                emitter.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+                    ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0, 255, 0)),
+                    ColorSequenceKeypoint.new(0.66, Color3.fromRGB(0, 150, 255)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 255))
+                })
+                emitter.Size = NumberSequence.new(1, 3)
+                emitter.Rate = 100
+                emitter.Speed = NumberRange.new(10, 25)
+                emitter.Parent = root
+                task.delay(1.5, function() emitter:Destroy() end)
+            end
+            if hum then hum.Health = 0 end
+        end
+
+    elseif msg:match(";kill%s+" .. me) then
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.Health = 0 end
+
+    elseif msg:match(";freeze%s+" .. me) then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            char.HumanoidRootPart.Anchored = true
+        end
+
+    elseif msg:match(";unfreeze%s+" .. me) then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            char.HumanoidRootPart.Anchored = false
+        end
+
+    elseif msg:match(";copyavatar%s+(%S+)%s+(%S+)") then
+        local copiador, alvo = msg:match(";copyavatar%s+(%S+)%s+(%S+)")
+        if me == copiador then
+            local targetPlayer = Players:FindFirstChild(alvo)
+            if targetPlayer then
+                local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    local description = Players:GetHumanoidDescriptionFromUserId(targetPlayer.UserId)
+                    hum:ApplyDescription(description)
+                end
+            end
+        end
+    end
+end
+
+---------------------------------------------------------
+-- CONEXÃO DE CHAT
+---------------------------------------------------------
+local function ConectarJogador(player)
+    player.Chatted:Connect(function(msg)
+        ExecutarComandoLocais(msg)
     end)
 end
 
-SecCmds:Button({ Title = "Kick",          Callback = function() sendCmd("kick") end })
-SecCmds:Button({ Title = "Kill",          Callback = function() sendCmd("kill") end })
-SecCmds:Button({ Title = "Fling",         Callback = function() sendCmd("fling") end })
-SecCmds:Button({ Title = "Freeze",        Callback = function() sendCmd("freeze") end })
-SecCmds:Button({ Title = "Unfreeze",      Callback = function() sendCmd("unfreeze") end })
-SecCmds:Button({ Title = "Jail",          Callback = function() sendCmd("jail") end })
-SecCmds:Button({ Title = "Unjail",        Callback = function() sendCmd("unjail") end })
-SecCmds:Button({ Title = "Bring",         Callback = function() sendCmd("bring") end })
-SecCmds:Button({ Title = "Explode",       Callback = function() sendCmd("explode") end })
-SecCmds:Button({ Title = "c00lkidd Avatar", Callback = function() sendCmd("coolkidd") end })
+for _, p in ipairs(Players:GetPlayers()) do
+    ConectarJogador(p)
+end
 
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if not gpe and input.KeyCode == Enum.KeyCode.P then
-        Window:Toggle()
-    end
-end)
+Players.PlayerAdded:Connect(ConectarJogador)
+
+if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+    TextChatService.MessageReceived:Connect(function(textChatMessage)
+        if textChatMessage.TextSource then
+            ExecutarComandoLocais(textChatMessage.Text)
+        end
+    end)
+end
